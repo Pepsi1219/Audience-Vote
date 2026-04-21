@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0a0f1e" />
+  <title>Audience Vote — โหวตทีมที่คุณชอบ</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700;800;900&family=Space+Mono:wght@400;700&family=Bebas+Neue&display=swap" rel="stylesheet" />
+
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <div id="screen-loading" class="screen active">
+    <div class="loading-center">
+      <div class="loading-logo">🗳️</div>
+      <div class="loading-ring"></div>
+      <p class="loading-text" data-i18n="loading">กำลังโหลด...</p>
+    </div>
+  </div>
+
+  <div id="screen-closed" class="screen">
+    <div class="closed-center">
+      
+      <div style="position: absolute; top: 12px; left: 16px;">
+        <button class="hdr-btn" onclick="openAdmin()">⚙️</button>
+      </div>
+      
+      <div class="closed-icon">🔒</div>
+      <h2 class="closed-title" data-i18n="votingClosed">การโหวตยังไม่เปิด</h2>
+      <p class="closed-sub" data-i18n="waitAdmin">กรุณารอผู้ดูแลระบบเปิดการโหวต</p>
+
+      <div id="closed-chart-wrap" class="closed-chart-wrap hidden">
+        <p class="chart-preview-label" data-i18n="currentScore">คะแนนล่าสุด</p>
+        <div id="preview-css-chart" class="css-chart-wrapper"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-voted" class="screen">
+    <div class="voted-center">
+      <div class="voted-check">✓</div>
+      <h2 class="voted-title" data-i18n="thankYou">ขอบคุณที่โหวต!</h2>
+      <p id="voted-confirm-text" class="voted-sub"></p>
+      
+      <div style="position: absolute; top: 12px; left: 16px;">
+        <button class="hdr-btn" onclick="goHome()">🏠</button>
+      </div>
+
+      <div class="live-board">
+        <div class="live-board-header">
+          <span class="live-dot"></span>
+          <span data-i18n="liveScore">คะแนนเรียลไทม์</span>
+        </div>
+        <div id="voted-css-chart" class="css-chart-wrapper"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="screen-vote" class="screen">
+    <header class="vote-header">
+      <div class="header-left">
+        <div class="app-logo">🗳️</div>
+        <div class="header-text">
+          <h1 class="app-title" data-i18n="appTitle">Audience Vote</h1>
+          <div class="timer-row">
+            <span class="timer-icon">⏱</span>
+            <span id="timer-display" class="timer-display">--:--</span>
+          </div>
+        </div>
+      </div>
+      <div class="header-right">
+        <button class="hdr-btn" id="btn-lang" onclick="toggleLanguage()">
+          <span id="lang-label">EN</span>
+        </button>
+        <button class="hdr-btn" onclick="openAdmin()">⚙️</button>
+      </div>
+    </header>
+
+    <div class="vote-prompt">
+      <p class="prompt-label" data-i18n="votePrompt">เลือกทีมที่คุณชื่นชอบ</p>
+      <p class="prompt-sub" data-i18n="voteOnce">โหวตได้ 1 ครั้งต่อคน</p>
+    </div>
+
+    <div id="teams-grid" class="teams-grid"></div>
+
+    <div class="live-score-section">
+      <div class="live-score-header">
+        <span class="live-dot"></span>
+        <span data-i18n="liveScore">คะแนนเรียลไทม์</span>
+        <span id="total-votes-display" class="total-votes">0</span>
+      </div>
+      <div id="main-css-chart" class="css-chart-wrapper"></div>
+    </div>
+  </div>
+
+  <div id="admin-overlay" class="admin-overlay hidden" onclick="closeAdminIfOutside(event)">
+    <div class="admin-panel">
+      <div class="admin-handle"></div> <div class="admin-header">
+        <h2 class="admin-title" data-i18n="adminTitle">⚙️ ตั้งค่า</h2>
+        <button class="close-btn" onclick="closeAdmin()">✕</button>
+      </div>
+
+      <div class="admin-card">
+        <div class="admin-row">
+          <div>
+            <div class="admin-row-title" data-i18n="voteControl">ควบคุมการโหวต</div>
+            <div id="vote-status-label" class="admin-row-sub" data-i18n="inactive">ปิดอยู่</div>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="vote-toggle" onchange="toggleVoting(this.checked)" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        
+        <div class="timer-setting">
+          <label class="setting-label" data-i18n="voteMinutes">เวลาโหวต (นาที)</label>
+          <div class="timer-controls">
+            <button class="qty-btn" onclick="changeMinutes(-1)">−</button>
+            <span id="minutes-display" class="qty-display">5</span>
+            <button class="qty-btn" onclick="changeMinutes(1)">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="admin-card">
+        <div class="card-section-title">🏆 <span data-i18n="teams">ทีม</span></div>
+        <div id="admin-teams-inputs" class="dynamic-inputs"></div>
+        <div class="input-footer">
+          <button class="add-btn" onclick="addTeamInput()">+ <span data-i18n="addTeam">เพิ่มทีม</span></button>
+          <span id="team-count-label" class="count-label">0 <span data-i18n="teams2">ทีม</span></span>
+        </div>
+      </div>
+
+      <div class="admin-actions">
+        <button class="reset-btn" onclick="resetVotes()">🔄 <span data-i18n="resetVotes">ล้างคะแนน</span></button>
+        <button class="save-btn" onclick="saveAdminSettings()">💾 <span data-i18n="save">บันทึก</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>

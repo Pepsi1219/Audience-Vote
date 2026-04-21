@@ -47,15 +47,28 @@
       <div class="voted-check">✓</div>
       <h2 class="voted-title" data-i18n="thankYou">ขอบคุณที่โหวต!</h2>
       <p id="voted-confirm-text" class="voted-sub"></p>
+
+      <div style="position: absolute; top: 12px; right: 110px;">
+      <button class="hdr-btn" id="btn-lang" onclick="toggleLanguage()">
+          <span id="lang-label">EN</span>
+        </button>
+      </div>
       
-      <div style="position: absolute; top: 12px; right: 16px;">
+      <div style="position: absolute; top: 12px; right: 60px;">
+      <button class="hdr-btn" id="btn-theme" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+          <span id="theme-icon">🌙</span>
+        </button>
+      </div>
+
+      
+      <div style="position: absolute; top: 12px; right: 10px;">
         <button class="hdr-btn" onclick="openAdmin()">⚙️</button>
       </div>
       
-      <div style="position: absolute; top: 12px; left: 16px;">
+      <!--<div style="position: absolute; top: 12px; left: 16px;">
         <button class="hdr-btn" onclick="goHome()">🏠</button>
-      </div>
-
+      </div> -->
+      
       <div class="live-board">
         <div class="live-board-header">
           <span class="live-dot"></span>
@@ -71,7 +84,7 @@
       <div class="header-left">
         <div class="app-logo">🗳️</div>
         <div class="header-text">
-          <h1 class="app-title" data-i18n="appTitle">Audience Vote</h1>
+          <h1 class="app-title" data-i18n="appTitle">Popular Vote</h1>
           <div class="timer-row">
             <span class="timer-icon">⏱</span>
             <span id="timer-display" class="timer-display">--:--</span>
@@ -82,8 +95,13 @@
         <button class="hdr-btn" id="btn-lang" onclick="toggleLanguage()">
           <span id="lang-label">EN</span>
         </button>
+      
+        <button class="hdr-btn" id="btn-theme" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+          <span id="theme-icon">🌙</span>
+        </button>
+      
         <button class="hdr-btn" onclick="openAdmin()">⚙️</button>
-      </div>
+    </div>
     </header>
 
     <div class="vote-prompt">

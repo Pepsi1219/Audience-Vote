@@ -27,7 +27,20 @@
 
   <div id="screen-closed" class="screen">
     <div class="closed-center">
-      <div style="position: absolute; top: 12px; left: 16px;">
+       <div style="position: absolute; top: 12px; right: 110px;">
+      <button class="hdr-btn" id="btn-lang" onclick="toggleLanguage()">
+          <span id="lang-label">EN</span>
+        </button>
+      </div>
+
+      <div style="position: absolute; top: 12px; right: 60px;">
+      <button class="hdr-btn" id="btn-theme" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
+          <span id="theme-icon">🌙</span>
+        </button>
+      </div>
+
+      
+      <div style="position: absolute; top: 12px; right: 10px;">
         <button class="hdr-btn" onclick="openAdmin()">⚙️</button>
       </div>
       
@@ -48,12 +61,19 @@
       <h2 class="voted-title" data-i18n="thankYou">ขอบคุณที่โหวต!</h2>
       <p id="voted-confirm-text" class="voted-sub"></p>
 
+
+      <div style="position: absolute; top: 12px; left: 10px;">
+       <span class="timer-icon">⏱</span>
+            <span id="timer-display" class="timer-display">--:--</span>
+       </div>
+
+      
       <div style="position: absolute; top: 12px; right: 110px;">
       <button class="hdr-btn" id="btn-lang" onclick="toggleLanguage()">
           <span id="lang-label">EN</span>
         </button>
       </div>
-      
+
       <div style="position: absolute; top: 12px; right: 60px;">
       <button class="hdr-btn" id="btn-theme" onclick="toggleTheme()" title="Toggle Dark/Light Mode">
           <span id="theme-icon">🌙</span>
@@ -128,6 +148,9 @@
         <button class="close-btn" onclick="closeAdmin()">✕</button>
       </div>
 
+      
+      
+      
       <div class="admin-card">
         <div class="admin-row">
           <div>

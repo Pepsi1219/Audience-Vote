@@ -202,55 +202,60 @@ function initFirebase() {
 
 /* SETTINGS CHANGE  */
 function handleSettingsChange() {
-  if (!settings) return; // ป้องกัน Error กรณี Settings ยังไม่โหลด
-  
-  applyTranslations();
+  if (!settings) return; 
 
-  // 1. ซิงค์สถานะการโหวตจาก LocalStorage ให้เป็นปัจจุบันที่สุด
+  // 1. [เพิ่มใหม่] ตรวจสอบสัญญาณ Reset จาก Admin
+  // ดึงเวลาที่เครื่องนี้โหวตล่าสุด (ถ้าไม่มีให้เป็น 0)
+  const lastLocalVoteTime = localStorage.getItem('audienceVote_timestamp') || 0;
+  // แปลงเวลาที่แอดมินกด Save ล่าสุดจาก Firebase
+  const serverUpdateTime = settings.lastUpdated ? settings.lastUpdated.toMillis() : 0;
+
+  // ⚡️ ถ้าแอดมินกด Save ทีหลังเวลาที่เราโหวต แสดงว่าเริ่มรอบใหม่
+  if (serverUpdateTime > lastLocalVoteTime) {
+    console.log("♻️ New session detected. Resetting local status...");
+    localStorage.removeItem('audienceVote_teamIndex');
+    localStorage.removeItem('audienceVote_timestamp');
+    myVote = null; // ล้างตัวแปรในแอปด้วย
+  }
+
+  // 2. ซิงค์สถานะการโหวตส่วนบุคคลให้เป็นปัจจุบัน
   const savedVote = localStorage.getItem('audienceVote_teamIndex');
-  // สำคัญ: ต้องอัปเดตตัวแปร global myVote ที่นี่ด้วย 
-  // เพื่อให้จังหวะ Admin กด Reset แล้วผู้ชมเด้งกลับหน้าแรกได้ทันที
   myVote = (savedVote !== null) ? parseInt(savedVote, 10) : null;
 
-  // 2. ตรวจสอบเงื่อนไขเวลา
+  applyTranslations();
+
+  // 3. ตรวจสอบเงื่อนไขเวลา (เฉพาะเครื่องนี้)
   const now = Date.now();
   const isExpired = settings.openUntil && now >= settings.openUntil;
 
-  // 3. โลจิกการสลับหน้าจอ (Screen Routing)
+  // 4. โลจิกการสลับหน้าจอ (Screen Routing)
   if (settings.isOpen && !isExpired) {
-    // --- กรณี: เปิดโหวต ---
+    // --- กรณี: เปิดโหวต และเวลายังไม่หมด ---
     if (myVote !== null) {
+      // ถ้าเครื่องนี้โหวตไปแล้วในรอบนี้ -> ไปหน้าสรุปผล
       showScreen('screen-voted');
       updateVotedScreen();
     } else {
+      // ถ้ายังไม่ได้โหวตในรอบนี้ -> ไปหน้าโหวต
       showScreen('screen-vote');
-      startCountdown();
+      if (typeof startCountdown === 'function') startCountdown();
     }
-  } else if (isExpired && settings.isOpen) {
-    // --- กรณี: หมดเวลาโหวต (Auto-Close) ---
-    console.log("⏰ Voting time expired.");
-    // เช็คอีกรอบเพื่อป้องกันการ Update ซ้ำซ้อน (Debounce)
-    db.collection('audience_config').doc('settings').update({ 
-      isOpen: false,
-      lastAutoClose: firebase.firestore.FieldValue.serverTimestamp() 
-    }).catch(err => console.error("Auto-close error:", err));
-    return; 
   } else {
-    // --- กรณี: ปิดโหวต (Admin ปิดเอง หรือ ระบบปิด) ---
-    clearTimerInterval();
+    // --- กรณี: ปิดโหวต หรือ เวลาหมด ---
+    if (typeof clearTimerInterval === 'function') clearTimerInterval();
     
     if (myVote !== null) {
-      // ถ้าเคยโหวตแล้ว ให้ไปหน้าสรุปผล
+      // โหวตไปแล้วก่อนระบบปิด -> ไปหน้าสรุปผล
       showScreen('screen-voted');
       updateVotedScreen();
     } else {
-      // ถ้ายังไม่เคยโหวต หรือโดนแอดมิน Reset คะแนน ให้ไปหน้า Closed
+      // ยังไม่ได้โหวตจนระบบปิด -> ไปหน้าปิดโหวต
       showScreen('screen-closed');
-      updateClosedChart();
+      if (typeof updateClosedChart === 'function') updateClosedChart();
     }
   }
 
-  // 4. อัปเดต UI
+  // 5. อัปเดต UI อื่นๆ
   if (typeof renderTeams === 'function') renderTeams();
   if (typeof updateCharts === 'function') updateCharts();
 }
@@ -330,37 +335,54 @@ function getTeamEmoji(idx) {
 
 /* CAST VOTE */
 async function castVote(teamIdx, teamName) {
+  // 1. ป้องกันการโหวตซ้ำหรือโหวตตอนปิดระบบ
   if (myVote !== null || !settings?.isOpen) return;
+
+  // 2. ล็อกปุ่มทั้งหมดทันทีเพื่อป้องกันการกดซ้ำ (UI UX)
   const allButtons = document.querySelectorAll('.team-btn');
   allButtons.forEach(btn => btn.disabled = true);
+
   const now = Date.now();
+
+  // 3. ตรวจสอบเรื่องเวลาโหวตอีกครั้งก่อนส่งข้อมูล
   if (settings.openUntil && now >= settings.openUntil) {
     showToast(t('timeUp'), 'error');
     if (typeof handleSettingsChange === 'function') handleSettingsChange();
     return;
   }
+
+  // 4. บันทึกสถานะลงเครื่องผู้ใช้ (Local)
   myVote = teamIdx;
   localStorage.setItem('audienceVote_teamIndex', teamIdx);
+  
+  // ⭐️ จุดสำคัญ: บันทึกเวลาที่โหวต เพื่อใช้เทียบกับ lastUpdated ของแอดมิน
+  localStorage.setItem('audienceVote_timestamp', now); 
+
   const teamRef = db.collection('audience_votes').doc(teamIdx.toString());
   
   try {
+    // 5. ส่งข้อมูลไปยัง Firebase
+    // ใช้ Increment เพื่อความแม่นยำกรณีโหวตพร้อมกันจำนวนมาก
     teamRef.set({
       count: firebase.firestore.FieldValue.increment(1),
       teamName: teamName,
       lastVoteAt: firebase.firestore.FieldValue.serverTimestamp()
     }, { merge: true }).catch(err => {
-        // กรณี Error: ให้ล้างค่าที่จองไว้ เพื่อให้เขากดใหม่ได้
+        // กรณี Firebase ทำงานผิดพลาด: คืนสถานะให้ผู้ใช้กดใหม่ได้
         console.error("Firebase Vote Error:", err);
         myVote = null;
         localStorage.removeItem('audienceVote_teamIndex');
+        localStorage.removeItem('audienceVote_timestamp'); // ล้างเวลาด้วย
         showToast("Error: " + err.message, "error");
-        renderTeams(); // คืนค่าปุ่มให้กดได้ใหม่
+        if (typeof renderTeams === 'function') renderTeams(); 
     });
 
-    // 5. เปลี่ยนหน้าทันทีโดยไม่ต้องรอ Response จาก Server (ทำให้รู้สึกแอปเร็วมาก)
-    showToast(t('votedFor', teamName), 'success');
+    // 6. แจ้งเตือนผู้ใช้ (Feedback)
+    // ใช้ String Template แทนหากฟังก์ชัน t() ไม่รองรับการแทนที่ค่า
+    const voteMsg = typeof t === 'function' ? `${t('votedFor')} ${teamName}` : `Voted for ${teamName}`;
+    showToast(voteMsg, 'success');
     
-    // หน่วงเวลาให้เห็น Glow Effect ที่ปุ่มก่อนเปลี่ยนหน้า
+    // 7. หน่วงเวลาเล็กน้อยเพื่อให้เห็น Effect ก่อนเปลี่ยนหน้า
     setTimeout(() => {
       showScreen('screen-voted');
       if (typeof updateVotedScreen === 'function') updateVotedScreen();
@@ -370,6 +392,7 @@ async function castVote(teamIdx, teamName) {
     console.error("Critical Vote Error:", error);
     myVote = null;
     localStorage.removeItem('audienceVote_teamIndex');
+    localStorage.removeItem('audienceVote_timestamp');
   }
 }
 
@@ -675,13 +698,12 @@ async function toggleVoting(isOpen) {
 }
 
 async function saveAdminSettings() {
-    const saveBtn = document.querySelector('.admin-footer .save-btn');
+    const saveBtn = document.querySelector('.admin-actions .save-btn'); // ตรวจสอบ Class ให้ตรงกับ HTML
     const inputs = document.querySelectorAll('#admin-teams-inputs .dynamic-input');
     
-    // 1. ดึงชื่อทีมและกรองช่องว่าง
+    // 1. ดึงชื่อทีมและกรองช่องว่าง (Validation)
     const teams = Array.from(inputs).map(i => i.value.trim()).filter(v => v);
     
-    // ป้องกันกรณีไม่มีชื่อทีมเลย
     if (teams.length === 0) {
         showToast(t('noTeams'), 'error');
         return;
@@ -689,39 +711,57 @@ async function saveAdminSettings() {
 
     const isVoteOpen = document.getElementById('vote-toggle').checked;
 
-    // 2. โลจิกจัดการเวลา (สำคัญ!)
+    // 2. โลจิกจัดการเวลา (Time Management)
     let openUntil = null;
     if (isVoteOpen) {
-        // หากการโหวตเปิดอยู่แล้ว ให้ใช้เวลาเดิม (settings.openUntil) 
-        // เว้นแต่ว่าจะเป็นการเปิดโหวตครั้งแรก ถึงจะคำนวณเวลาใหม่
+        // หากแอดมินแค่แก้ชื่อทีมขณะโหวตอยู่ (settings.isOpen เป็น true อยู่แล้ว) ให้ใช้เวลาเดิม
+        // แต่ถ้าเป็นการกด "เปิดโหวตใหม่" (จากเดิมปิดอยู่) ให้เริ่มนับเวลาใหม่ตามนาทีที่ตั้งไว้
         openUntil = (settings && settings.isOpen && settings.openUntil) 
                     ? settings.openUntil 
                     : Date.now() + (adminMinutes * 60 * 1000);
     }
 
     try {
-        // ล็อกปุ่มป้องกันการกดซ้ำ
-        if (saveBtn) saveBtn.disabled = true;
+        // ล็อกปุ่มป้องกันการกดซ้ำ (UI Feedback)
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '⌛...';
+        }
 
+        // 3. ตรวจสอบว่ามีการเปลี่ยนแปลงสำคัญที่ต้องล้างคะแนนหรือไม่
+        // (เช่น เปลี่ยนชื่อทีม หรือเปิดโหวตรอบใหม่)
+        const isTeamChanged = JSON.stringify(settings?.teams) !== JSON.stringify(teams);
+        const isOpeningNewRound = isVoteOpen && !settings?.isOpen;
+
+        if (isTeamChanged || isOpeningNewRound) {
+            console.log("🔄 Important change detected. Resetting global votes...");
+            await resetVotes(); // ฟังก์ชันล้างคะแนนใน Firebase ที่เราเขียนไว้
+        }
+
+        // 4. บันทึกข้อมูลลง Firestore
         await db.collection('audience_config').doc('settings').set({
             teams: teams,
             minutes: adminMinutes,
             isOpen: isVoteOpen,
             openUntil: openUntil,
+            // ⭐️ หัวใจสำคัญ: ส่งเวลาที่บันทึกล่าสุดเพื่อให้เครื่องลูกเช็คและ Force Reset LocalStorage
             lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
 
         showToast(t('saved'), 'success');
         closeAdmin();
+
     } catch (error) {
         console.error("❌ Save Settings Error:", error);
         showToast("Error saving settings", "error");
     } finally {
         // คืนสถานะปุ่ม
-        if (saveBtn) saveBtn.disabled = false;
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = `💾 <span>${t('save')}</span>`;
+        }
     }
 }
-
 async function resetVotes() {
   if (!confirm(t('resetConfirm'))) return;
 
@@ -936,7 +976,7 @@ function goHome() {
     showScreen('screen-voted');
     if (typeof updateVotedScreen === 'function') updateVotedScreen();
   } else {
-    showScreen('screen-vote');
+    showScreen('screen-closed');
   }
 
   // อัปเดตกราฟให้เป็นปัจจุบันเสมอเมื่อกลับหน้าหลัก

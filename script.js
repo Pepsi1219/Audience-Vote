@@ -15,7 +15,7 @@ const firebaseConfig = {
 const i18n = {
   th: {
     loading:       "กำลังโหลด...",
-    appTitle:      "คะแนนเสียงมหาชน",
+    appTitle:      "คะแนนขวัญใจมหาชน",
     votePrompt:    "เลือกทีมที่คุณชื่นชอบ",
     voteOnce:      "โหวตได้ 1 ครั้งต่อคน",
     liveScore:     "คะแนนเรียลไทม์",
@@ -532,64 +532,77 @@ function updateCharts() {
     }
   });
 }
+
 /* COUNTDOWN TIMER */
 function startCountdown() {
   clearTimerInterval();
   
-  const el = document.getElementById('timer-display');
-  if (!el) return;
-
-  // 1. ตรวจสอบว่ามีเวลาสิ้นสุดกำหนดไว้หรือไม่
+  // ตรวจสอบว่ามีข้อมูลเวลาจาก Firebase หรือไม่
   if (!settings?.openUntil) {
-    el.textContent = '--:--';
-    el.classList.remove('urgent');
+    updateTimerDisplay('--:--'); // ถ้าไม่มีเวลาให้โชว์ขีดขีด
     return;
   }
 
-  // 2. แสดงผลครั้งแรกทันที (ป้องกันอาการเลขกระตุกตอนเริ่ม)
+  // 1. แสดงผลทันทีหนึ่งครั้ง (ป้องกันเลขกระตุก)
   updateTimerDisplay();
 
-  // 3. เริ่มลูปนับถอยหลัง
+  // 2. เริ่มลูปนับถอยหลังทุก 1 วินาที
   timerInterval = setInterval(() => {
     const remaining = settings.openUntil - Date.now();
     
     if (remaining <= 0) {
-      // หยุดเวลา
+      // --- กรณี: หมดเวลาโหวต ---
       clearTimerInterval();
-      el.textContent = '00:00';
-      el.classList.add('urgent'); // แสดงสถานะหมดเวลาเป็นสีแดง
+      updateTimerDisplay('00:00', true); // บังคับโชว์ 00:00 และใส่สีแดง
       
-      // แจ้งเตือนและเปลี่ยนหน้า
       if (typeof showToast === 'function') showToast(t('timeUp'), 'info');
       
-      // หน่วงเวลาเล็กน้อยเพื่อให้ผู้ใช้เห็น 00:00 ก่อนเด้งหน้าจอ
+      // หน่วงเวลา 1.5 วินาทีเพื่อให้เห็นเลข 00:00 ก่อนเด้งเปลี่ยนหน้า
       setTimeout(() => {
         if (typeof handleSettingsChange === 'function') handleSettingsChange();
       }, 1500);
       return;
     }
     
+    // อัปเดตเวลาตามปกติ
     updateTimerDisplay();
   }, 1000);
 }
 
-function updateTimerDisplay() {
-  const el = document.getElementById('timer-display');
-  if (!el || !settings?.openUntil) return;
+function updateTimerDisplay(forceValue = null, isUrgent = false) {
+  // ⭐️ จุดสำคัญ: ใช้ querySelectorAll เพื่อดึง 'timer-display' ทุกอันที่มีในทุกหน้าจอ
+  const els = document.querySelectorAll('#timer-display');
+  if (els.length === 0) return;
 
-  const remaining = Math.max(0, settings.openUntil - Date.now());
-  const mins = Math.floor(remaining / 60000);
-  const secs = Math.floor((remaining % 60000) / 1000);
+  let timeStr = "";
+  let urgentMode = isUrgent;
 
-  // ใช้ padStart เพื่อให้เป็น 00:00 เสมอ
-  el.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-
-  // การจัดการ Class แบบปลอดภัย (ไม่ทับ Class เดิม)
-  if (remaining < 30000) { // ถ้าน้อยกว่า 30 วินาที
-    el.classList.add('urgent');
+  // 1. คำนวณเวลา (ถ้าไม่ได้ถูกบังคับค่ามา)
+  if (forceValue) {
+    timeStr = forceValue;
+  } else if (settings?.openUntil) {
+    const remaining = Math.max(0, settings.openUntil - Date.now());
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    
+    // ถ้าเหลือน้อยกว่า 30 วินาที ให้เปิดโหมดตัวเลขสีแดง
+    if (remaining < 30000) urgentMode = true;
   } else {
-    el.classList.remove('urgent');
+    timeStr = "--:--";
   }
+
+  // 2. วนลูปอัปเดต Element ทุกตัวที่เจอ
+  els.forEach(el => {
+    el.textContent = timeStr;
+    
+    // จัดการเรื่องสี (Class: urgent)
+    if (urgentMode) {
+      el.classList.add('urgent');
+    } else {
+      el.classList.remove('urgent');
+    }
+  });
 }
 
 function clearTimerInterval() {
@@ -603,18 +616,20 @@ function clearTimerInterval() {
 function openAdmin() {
   const password = prompt("🔑 กรุณาใส่รหัสผ่านแอดมิน:");
 
-  // ตรวจสอบรหัสผ่าน
   if (password === "Admin1234") {
-    // ถ้ารหัสถูกต้อง ให้เปิดแผงควบคุม
     const overlay = document.getElementById('admin-overlay');
     if (overlay) {
       overlay.classList.remove('hidden');
-      // โหลดข้อมูลล่าสุดเข้าสู่ Input
-      if (typeof renderAdminTeams === 'function') renderAdminTeams();
+      
+      // 1. [ปรับตรงนี้] แก้ชื่อฟังก์ชันให้ตรงกับที่มีอยู่ด้านล่าง
+      renderAdminTeamInputs(); 
+      
+      // 2. [เพิ่มตรงนี้] เรียกใช้เพื่อตั้งค่าสถานะสวิตช์และเวลาปัจจุบัน
+      renderAdminPanel(); 
+
       showToast("🔐 เข้าสู่ระบบแอดมินแล้ว", "success");
     }
   } else if (password !== null) {
-    // ถ้ารหัสผิด (และไม่ได้กด Cancel)
     showToast("❌ รหัสผ่านไม่ถูกต้อง!", "error");
   }
 }
@@ -630,35 +645,45 @@ function closeAdminIfOutside(e) {
 }
 
 function renderAdminPanel() {
+  if (!settings) return;
+
+  // ตั้งค่าสถานะ เปิด/ปิด โหวต ตามค่าจริงใน Firebase
   const toggle = document.getElementById('vote-toggle');
   if (toggle) {
-    toggle.checked = !!settings?.isOpen;
+    toggle.checked = !!settings.isOpen;
     updateVoteStatusLabel(toggle.checked);
   }
+
+  // ดึงค่าเวลา (minutes) จาก Firebase มาแสดง (ถ้าไม่มีให้ใช้ adminMinutes เดิม)
   const minDisplay = document.getElementById('minutes-display');
-  if (minDisplay) minDisplay.textContent = adminMinutes;
-  const container = document.getElementById('admin-teams-inputs');
-  if (container && container.children.length === 0) { 
-    // ให้ Render เฉพาะตอนที่ตู้คอนเทนเนอร์ว่างเปล่า (ตอนเปิดครั้งแรก)
-    renderAdminTeamInputs();
+  if (minDisplay) {
+    if (settings.minutes) adminMinutes = settings.minutes; // อัปเดตค่าตัวแปร Global ด้วย
+    minDisplay.textContent = adminMinutes;
   }
 }
 
 function renderAdminTeamInputs() {
   const container = document.getElementById('admin-teams-inputs');
   if (!container) return;
+  
+  // ล้างค่าเก่าในหน้าจอออกก่อน เพื่อป้องกันข้อมูลซ้อนกัน
   container.innerHTML = '';
+  
+  // ดึงข้อมูลทีมจาก settings ใน Firebase
+  // ถ้าไม่มีทีมเลย ให้เริ่มด้วยช่องว่าง 1 ช่อง
   const teams = (settings?.teams && settings.teams.length > 0) ? settings.teams : [''];
   
   teams.forEach((name, idx) => {
     container.appendChild(createTeamInputRow(idx + 1, name));
   });
+  
   updateTeamCount();
 }
 
 function createTeamInputRow(num, val) {
   const row = document.createElement('div');
   row.className = 'input-item';
+  // ใช้ค่า val ที่ส่งมา (ซึ่งคือชื่อทีมจาก Firebase) ใส่ลงในช่อง input
   row.innerHTML = `
     <span class="input-num">${num}</span>
     <input class="dynamic-input" type="text" value="${val}" placeholder="${t('addTeam')}..." />
@@ -787,7 +812,7 @@ async function saveAdminSettings() {
             minutes: adminMinutes,
             isOpen: isVoteOpen,
             openUntil: openUntil,
-            // ⭐️ หัวใจสำคัญ: ส่งเวลาที่บันทึกล่าสุดเพื่อให้เครื่องลูกเช็คและ Force Reset LocalStorage
+            // ส่งเวลาที่บันทึกล่าสุดเพื่อให้เครื่องลูกเช็คและ Force Reset LocalStorage
             lastUpdated: firebase.firestore.FieldValue.serverTimestamp()
         }, { merge: true });
 

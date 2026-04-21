@@ -15,7 +15,7 @@ const firebaseConfig = {
 const i18n = {
   th: {
     loading:       "กำลังโหลด...",
-    appTitle:      "Audience Vote",
+    appTitle:      "คะแนนเสียงมหาชน",
     votePrompt:    "เลือกทีมที่คุณชื่นชอบ",
     voteOnce:      "โหวตได้ 1 ครั้งต่อคน",
     liveScore:     "คะแนนเรียลไทม์",
@@ -46,7 +46,7 @@ const i18n = {
   },
   en: {
     loading:       "Loading...",
-    appTitle:      "Audience Vote",
+    appTitle:      "Popular Vote",
     votePrompt:    "Vote for your favorite team",
     voteOnce:      "One vote per person",
     liveScore:     "Live Scores",
@@ -78,7 +78,6 @@ const i18n = {
 };
 
 /* STATE */
-/* STATE (REFINED) */
 let lang          = 'th'; 
 let db            = null; 
 let settings      = null; 
@@ -98,49 +97,61 @@ const TEAM_COLORS = [
 
 /* i18n FUNCTIONS */
 function t(key, ...args) {
-  // ป้องกันกรณี i18n ยังโหลดไม่มา หรือ key ไม่มีอยู่จริง
-  if (!window.i18n || !window.i18n[lang]) return key;
+  // ตรวจสอบว่ามีตัวแปร i18n และมีภาษานั้นๆ หรือไม่
+  if (typeof i18n === 'undefined' || !i18n[lang]) return key;
   
-  const val = window.i18n[lang][key];
+  const val = i18n[lang][key];
+
+  // ถ้าคำแปลเป็นฟังก์ชัน (เช่น votedFor) ให้ส่ง args เข้าไปประมวลผล
   if (typeof val === 'function') return val(...args);
+  
+  // ถ้าเป็น String ปกติให้คืนค่าออกไปเลย ถ้าไม่มีให้คืนค่า Key
   return val || key;
 }
 
 function applyTranslations() {
-  if (!window.i18n || !window.i18n[lang]) return;
+  if (typeof i18n === 'undefined' || !i18n[lang]) return;
 
+  // 1. แปลภาษา Element ที่มี data-i18n ทั้งหมด
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
-    const val = window.i18n[lang][key];
-    if (typeof val === 'string') el.textContent = val;
+    // ใช้ฟังก์ชัน t(key) เพื่อดึงคำแปลที่ถูกต้อง
+    el.textContent = t(key);
   });
 
-  // อัปเดต Label บนปุ่มเปลี่ยนภาษา
+  // 2. [จุดสำคัญ] อัปเดตตัวหนังสือบนปุ่มภาษา (id="lang-label")
   const langLabel = document.getElementById('lang-label');
   if (langLabel) {
-    langLabel.textContent = lang === 'th' ? 'EN' : 'ไทย';
+    // ถ้าปัจจุบันเป็น 'th' ปุ่มควรโชว์ 'EN'
+    // ถ้าปัจจุบันเป็น 'en' ปุ่มควรโชว์ 'ไทย' (หรือ 'TH')
+    langLabel.textContent = (lang === 'th') ? 'EN' : 'ไทย';
   }
   
+  // กำหนดภาษาให้ตัวเอกสาร (เพื่อ SEO และ Accessibility)
   document.documentElement.lang = lang;
 }
 
 function toggleLanguage() {
-  lang = lang === 'th' ? 'en' : 'th';
+  // 1. สลับค่าระหว่าง 'th' และ 'en'
+  lang = (lang === 'th') ? 'en' : 'th';
   
-  // บันทึกภาษาลง localStorage เพื่อให้ Refresh แล้วภาษาไม่เปลี่ยนกลับ
+  // 2. บันทึกไว้ในเครื่องผู้ชม
   localStorage.setItem('audience_lang', lang);
   
+  // 3. สั่งให้ตัวหนังสือบนหน้าจอเปลี่ยนทันที
   applyTranslations();
   
-  // Re-render ส่วนที่สร้างจาก JS
+  // 4. อัปเดตส่วนที่สร้างด้วย JavaScript (รายชื่อทีมและกราฟ)
   if (typeof renderTeams === 'function') renderTeams();
   if (typeof updateCharts === 'function') updateCharts();
   
-  // ตรวจสอบว่ามี showToast หรือยังก่อนเรียกใช้
+  // 5. แสดง Toast แจ้งเตือนภาษาใหม่
   if (typeof showToast === 'function') {
-    showToast(lang === 'th' ? '🇹🇭 ภาษาไทย' : '🇬🇧 English', 'info');
+    const msg = (lang === 'th') ? '🇹🇭 ภาษาไทย' : '🇬🇧 English';
+    showToast(msg, 'info');
   }
 }
+
 
 /*  FIREBASE INIT */
 function initFirebase() {
@@ -202,41 +213,62 @@ function initFirebase() {
 
 /* SETTINGS CHANGE  */
 function handleSettingsChange() {
-  if (!settings) return; 
+  if (!settings) return;
 
-  // 1. [เพิ่มใหม่] ตรวจสอบสัญญาณ Reset จาก Admin
-  // ดึงเวลาที่เครื่องนี้โหวตล่าสุด (ถ้าไม่มีให้เป็น 0)
+  // 1. ตรวจสอบสัญญาณการรีเซ็ต หรือ อัปเดตใหม่จาก Admin
   const lastLocalVoteTime = localStorage.getItem('audienceVote_timestamp') || 0;
-  // แปลงเวลาที่แอดมินกด Save ล่าสุดจาก Firebase
   const serverUpdateTime = settings.lastUpdated ? settings.lastUpdated.toMillis() : 0;
 
-  // ⚡️ ถ้าแอดมินกด Save ทีหลังเวลาที่เราโหวต แสดงว่าเริ่มรอบใหม่
+  // ⚡️ ตรวจพบสัญญาณใหม่ (เวลาเซิร์ฟเวอร์ใหม่กว่าเวลาที่เราเคยบันทึกไว้)
   if (serverUpdateTime > lastLocalVoteTime) {
-    console.log("♻️ New session detected. Resetting local status...");
+    console.log("♻️ Reset signal detected. Redirecting everyone to loading...");
+
+    // ล้างข้อมูลการโหวตเก่าในเครื่องทิ้ง
     localStorage.removeItem('audienceVote_teamIndex');
     localStorage.removeItem('audienceVote_timestamp');
-    myVote = null; // ล้างตัวแปรในแอปด้วย
+    myVote = null;
+
+    // บังคับเด้งกลับไปหน้าจอ Loading ทันทีตามที่คุณต้องการ
+    showScreen('screen-loading');
+
+    // หน่วงเวลาหน้า Loading ไว้ 1.2 วินาทีเพื่อให้ดูเนียน และรอให้ Firebase เคลียร์ข้อมูลเสร็จ
+    setTimeout(() => {
+      // เมื่อโหลดเสร็จแล้ว ค่อยตัดสินใจว่าจะพาไปหน้าไหนต่อ (เช่น หน้าโหวต หรือ หน้าปิดโหวต)
+      processScreenRouting();
+    }, 1200);
+
+    // หยุดการทำงานของฟังก์ชันนี้ไว้แค่นี้ก่อน เพื่อรอผลจาก setTimeout ด้านบน
+    return;
   }
 
-  // 2. ซิงค์สถานะการโหวตส่วนบุคคลให้เป็นปัจจุบัน
-  const savedVote = localStorage.getItem('audienceVote_teamIndex');
-  myVote = (savedVote !== null) ? parseInt(savedVote, 10) : null;
+  // หากไม่ใช่จังหวะ Reset ให้ทำงานตามปกติ
+  processScreenRouting();
+}
+
+/* ======================================================
+   [FUNCTION: PROCESS SCREEN ROUTING]
+   โลจิกการเลือกหน้าจอ (แยกออกมาเพื่อให้เรียกใช้หลังจากหน้า Loading)
+   ====================================================== */
+function processScreenRouting() {
+  if (!settings) return;
 
   applyTranslations();
 
-  // 3. ตรวจสอบเงื่อนไขเวลา (เฉพาะเครื่องนี้)
+  // 1. ซิงค์สถานะการโหวตปัจจุบัน (ควรเป็น null หากเพิ่งโดน Reset)
+  const savedVote = localStorage.getItem('audienceVote_teamIndex');
+  myVote = (savedVote !== null) ? parseInt(savedVote, 10) : null;
+
+  // 2. ตรวจสอบเงื่อนไขเวลา
   const now = Date.now();
   const isExpired = settings.openUntil && now >= settings.openUntil;
 
-  // 4. โลจิกการสลับหน้าจอ (Screen Routing)
+  // 3. การเลือกหน้าจอที่จะแสดงผล
   if (settings.isOpen && !isExpired) {
-    // --- กรณี: เปิดโหวต และเวลายังไม่หมด ---
+    // --- กรณี: เปิดโหวต ---
     if (myVote !== null) {
-      // ถ้าเครื่องนี้โหวตไปแล้วในรอบนี้ -> ไปหน้าสรุปผล
       showScreen('screen-voted');
       updateVotedScreen();
     } else {
-      // ถ้ายังไม่ได้โหวตในรอบนี้ -> ไปหน้าโหวต
       showScreen('screen-vote');
       if (typeof startCountdown === 'function') startCountdown();
     }
@@ -245,17 +277,15 @@ function handleSettingsChange() {
     if (typeof clearTimerInterval === 'function') clearTimerInterval();
     
     if (myVote !== null) {
-      // โหวตไปแล้วก่อนระบบปิด -> ไปหน้าสรุปผล
       showScreen('screen-voted');
       updateVotedScreen();
     } else {
-      // ยังไม่ได้โหวตจนระบบปิด -> ไปหน้าปิดโหวต
       showScreen('screen-closed');
       if (typeof updateClosedChart === 'function') updateClosedChart();
     }
   }
 
-  // 5. อัปเดต UI อื่นๆ
+  // 4. อัปเดต UI อื่นๆ (ปุ่มทีม และ กราฟ)
   if (typeof renderTeams === 'function') renderTeams();
   if (typeof updateCharts === 'function') updateCharts();
 }
@@ -329,7 +359,7 @@ function renderTeams() {
 }
 
 function getTeamEmoji(idx) {
-  const emojis = ['🦁','🐯','🦊','🐺','🦅','🐉','🦋','⚡'];
+  const emojis = ['','','','','','','',''];
   return emojis[idx % emojis.length];
 }
 
@@ -571,9 +601,22 @@ function clearTimerInterval() {
 
 /* ADMIN PANEL */
 function openAdmin() {
-  renderAdminPanel();
-  const overlay = document.getElementById('admin-overlay');
-  if (overlay) overlay.classList.remove('hidden');
+  const password = prompt("🔑 กรุณาใส่รหัสผ่านแอดมิน:");
+
+  // ตรวจสอบรหัสผ่าน
+  if (password === "Admin1234") {
+    // ถ้ารหัสถูกต้อง ให้เปิดแผงควบคุม
+    const overlay = document.getElementById('admin-overlay');
+    if (overlay) {
+      overlay.classList.remove('hidden');
+      // โหลดข้อมูลล่าสุดเข้าสู่ Input
+      if (typeof renderAdminTeams === 'function') renderAdminTeams();
+      showToast("🔐 เข้าสู่ระบบแอดมินแล้ว", "success");
+    }
+  } else if (password !== null) {
+    // ถ้ารหัสผิด (และไม่ได้กด Cancel)
+    showToast("❌ รหัสผ่านไม่ถูกต้อง!", "error");
+  }
 }
 
 function closeAdmin() {
@@ -763,51 +806,55 @@ async function saveAdminSettings() {
     }
 }
 async function resetVotes() {
-  if (!confirm(t('resetConfirm'))) return;
+    if (!confirm(t('resetConfirm'))) return;
 
-  try {
-    const batch = db.batch();
+    try {
+        const batch = db.batch();
 
-    // 1. ล้างคะแนนใน audience_votes
-    const voteSnap = await db.collection('audience_votes').get();
-    voteSnap.forEach(doc => {
-      batch.delete(doc.ref);
-    });
+        // 1. ล้างคะแนนใน audience_votes (ลบข้อมูลโหวตเดิมทิ้ง)
+        const voteSnap = await db.collection('audience_votes').get();
+        voteSnap.forEach(doc => {
+            batch.delete(doc.ref);
+        });
 
-    // 2. ล้าง/รีเซ็ตข้อมูลใน audience_config/settings
-    const settingsRef = db.collection('audience_config').doc('settings');
-    batch.update(settingsRef, {
-      isOpen: false,
-      openUntil: null,
-      teams: [], // 👈 ล้างรายชื่อทีมให้เป็น Array ว่าง
-      minutes: 5, // 👈 กลับไปใช้ค่าเริ่มต้น 5 นาที
-      lastReset: firebase.firestore.FieldValue.serverTimestamp()
-    });
+        // 2. อัปเดต settings เพื่อปิดระบบและส่งสัญญาณ Reset
+        const settingsRef = db.collection('audience_config').doc('settings');
+        batch.update(settingsRef, {
+            isOpen: false,
+            openUntil: null,
+            teams: [],    // ล้างรายชื่อทีม
+            minutes: 5,   // รีเซ็ตนาทีพื้นฐาน
+            // ⭐️ หัวใจสำคัญ: ส่งสัญญาณเวลาใหม่เพื่อให้เครื่องลูกตรวจพบการเปลี่ยนแปลง
+            lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+            lastReset: firebase.firestore.FieldValue.serverTimestamp()
+        });
 
-    // ยืนยันการล้างทั้งหมดในครั้งเดียว
-    await batch.commit();
+        // ยืนยันการล้างข้อมูลทั้งหมดไปยัง Firebase
+        await batch.commit();
 
-    // 3. ล้าง Local State ในเครื่องแอดมิน
-    localStorage.removeItem('audienceVote_teamIndex');
-    myVote = null;
-    
-    // ล้างหน้าจอ Input ใน Admin Panel ให้ว่างเปล่าทันที
-    const container = document.getElementById('admin-teams-inputs');
-    if (container) container.innerHTML = ''; 
-    updateTeamCount();
+        // 3. ล้าง Local State ในเครื่องแอดมินเอง
+        localStorage.removeItem('audienceVote_teamIndex');
+        localStorage.removeItem('audienceVote_timestamp'); // ล้างเวลาโหวตด้วย
+        myVote = null;
+        
+        // ล้างหน้าจอ Input ใน Admin Panel ให้ว่างเปล่าทันที
+        const container = document.getElementById('admin-teams-inputs');
+        if (container) container.innerHTML = ''; 
+        if (typeof updateTeamCount === 'function') updateTeamCount();
 
-    showToast(t('resetDone'), 'info');
-    closeAdmin();
+        showToast(t('resetDone'), 'info');
+        closeAdmin();
 
-    // บังคับให้หน้าจอผู้ชมอัปเดตทันที
-    setTimeout(() => {
-      if (typeof handleSettingsChange === 'function') handleSettingsChange();
-    }, 500);
+        // 4. บังคับให้หน้าจอแอดมินเองกลับไปหน้าโหลดเพื่อ Sync ข้อมูลใหม่
+        showScreen('screen-loading');
+        setTimeout(() => {
+            if (typeof handleSettingsChange === 'function') handleSettingsChange();
+        }, 1000);
 
-  } catch (error) {
-    console.error("Reset Error:", error);
-    showToast("Error resetting: " + error.message, "error");
-  }
+    } catch (error) {
+        console.error("Reset Error:", error);
+        showToast("Error resetting: " + error.message, "error");
+    }
 }
 
 /* SCREEN MANAGEMENT */
@@ -904,6 +951,7 @@ function init() {
 
   // 5. ปรับปรุง UX สำหรับ Mobile
   initMobileOptimizations();
+  initTheme();
 }
 
 /** * รวมการตั้งค่าเฉพาะทางสำหรับมือถือ 
@@ -959,26 +1007,49 @@ document.addEventListener('DOMContentLoaded', init);
 
 
 function goHome() {
-  // 1. ถ้ายังไม่มีการโหลด Settings ให้ไปหน้า Loading ก่อน
-  if (!settings) {
-    showScreen('screen-loading');
-    return;
+  console.log("🏠 Going Home...");
+
+  // 1. บังคับไปหน้า Loading ทันที (เพื่อให้ User รู้สึกว่าแอปกำลังอัปเดต)
+  showScreen('screen-loading');
+
+  // 2. หน่วงเวลาสั้นๆ เพื่อความเนียนของ UI
+  setTimeout(() => {
+    // 3. เรียกใช้ handleSettingsChange() ที่เราเขียนไว้ดีแล้ว 
+    // ให้มันเป็นคนตัดสินใจเองว่า ณ เวลานั้น ควรจะไปหน้า Vote, Voted หรือ Closed
+    if (typeof handleSettingsChange === 'function') {
+      handleSettingsChange();
+    }
+  }, 500); // หน่วงไว้ครึ่งวินาที
+}
+
+/* TOGGLE THEME */
+function toggleTheme() {
+  const body = document.body;
+  const icon = document.getElementById('theme-icon');
+  
+  // 1. สลับ Class .light-mode
+  body.classList.toggle('light-mode');
+  
+  // 2. ตรวจสอบสถานะเพื่อเปลี่ยนไอคอนและบันทึกค่า
+  const isLight = body.classList.contains('light-mode');
+  if (icon) {
+    icon.textContent = isLight ? '☀️' : '🌙';
+    // เพิ่ม Effect การหมุน
+    icon.parentElement.classList.remove('rotate-icon');
+    void icon.offsetWidth; // Trigger reflow
+    icon.parentElement.classList.add('rotate-icon');
   }
 
-  // 2. ถ้าปิดโหวตอยู่ ให้ไปหน้า Closed
-  if (!settings.isOpen) {
-    showScreen('screen-closed');
-    return;
-  }
+  localStorage.setItem('audience_theme', isLight ? 'light' : 'dark');
+}
 
-  // 3. ถ้าเปิดโหวตอยู่: เช็คว่าคนนี้โหวตไปหรือยัง
-  if (myVote !== null) {
-    showScreen('screen-voted');
-    if (typeof updateVotedScreen === 'function') updateVotedScreen();
-  } else {
-    showScreen('screen-closed');
+/* INIT THEME */
+function initTheme() {
+  const savedTheme = localStorage.getItem('audience_theme');
+  const icon = document.getElementById('theme-icon');
+  
+  if (savedTheme === 'light') {
+    document.body.classList.add('light-mode');
+    if (icon) icon.textContent = '☀️';
   }
-
-  // อัปเดตกราฟให้เป็นปัจจุบันเสมอเมื่อกลับหน้าหลัก
-  if (typeof updateCharts === 'function') updateCharts();
 }

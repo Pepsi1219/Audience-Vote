@@ -657,3 +657,44 @@ input  { font-family: var(--font-main); }
   inset: 0;
   background: linear-gradient(90deg, rgba(255,255,255,0.15), transparent);
 }
+
+
+/* --- ชุดสีหลัก (Dark Mode เป็นค่าเริ่มต้น) --- */
+:root {
+  --clr-bg:        #0a0f1e;
+  --clr-surface:   #111827;
+  --clr-surface2:  #1e293b;
+  --clr-border:    #1e3a5f;
+  --clr-text:      #f1f5f9;
+  --clr-text-dim:  #94a3b8;
+  /* ... ตัวแปรอื่นๆ ของคุณ ... */
+}
+
+/* --- ชุดสีสำหรับ Light Mode --- */
+body.light-mode {
+  --clr-bg:        #f8fafc; /* พื้นหลังสว่างจ้า */
+  --clr-surface:   #ffffff; /* การ์ดสีขาว */
+  --clr-surface2:  #f1f5f9; /* ส่วนประกอบรอง */
+  --clr-border:    #e2e8f0; /* เส้นขอบอ่อนๆ */
+  --clr-text:      #0f172a; /* ตัวหนังสือเข้ม */
+  --clr-text-dim:  #475569; /* ตัวหนังสือจาง */
+  --clr-text-muted:#94a3b8;
+}
+
+/* เพิ่ม Transition ให้การเปลี่ยนโหมดดูนุ่มนวล */
+body {
+  background-color: var(--clr-bg);
+  color: var(--clr-text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* ปรับแต่งไอคอนให้หมุนสวยๆ ตอนกด */
+.rotate-icon {
+  animation: rotateScale 0.4s var(--bounce);
+}
+
+@keyframes rotateScale {
+  0% { transform: scale(1) rotate(0); }
+  50% { transform: scale(1.2) rotate(180deg); }
+  100% { transform: scale(1) rotate(360deg); }
+}

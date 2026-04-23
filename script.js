@@ -77,6 +77,22 @@ const i18n = {
   }
 };
 
+/* AUDIO STATE */
+const bgm = new Audio('waiting-bgm.mp3'); 
+bgm.loop = true; // เล่นวนลูปอัตโนมัติ
+
+// เมื่อมีการคลิกที่ไหนก็ได้ในหน้าจอครั้งแรก (เช่น ตอนผู้ชมกดดูหน้า Loading หรือกดปุ่มใดๆ)
+document.addEventListener('click', () => {
+  // สร้างเงื่อนไขปลดล็อก Audio Context
+  if (bgm.paused && settings?.isOpen) {
+    const now = Date.now();
+    const isExpired = settings.openUntil && now >= settings.openUntil;
+    if (!isExpired) {
+      bgm.play().catch(e => console.log("Unlock failed:", e));
+    }
+  }
+}, { once: true });
+
 /* STATE */
 let lang          = 'th'; 
 let db            = null; 
@@ -131,6 +147,20 @@ function applyTranslations() {
   document.documentElement.lang = lang;
 }
 
+
+/* [BGM CONTROL FUNCTIONS] */
+function playBGM() {
+    bgm.play().catch(err => {
+        console.warn("Autoplay blocked: เพลงจะเล่นได้หลังจากผู้ใช้คลิกหน้าจอหนึ่งครั้ง", err);
+    });
+}
+
+function stopBGM() {
+    bgm.pause();
+    bgm.currentTime = 0; // รีเซ็ตเพลงกลับไปเริ่มต้นใหม่
+}
+
+
 function toggleLanguage() {
   // 1. สลับค่าระหว่าง 'th' และ 'en'
   lang = (lang === 'th') ? 'en' : 'th';
@@ -155,61 +185,74 @@ function toggleLanguage() {
 
 /*  FIREBASE INIT */
 function initFirebase() {
-  if (db) return; // ✅ ป้องกันการสร้าง Connection ซ้อน (ถ้ามี db แล้วให้หยุด)
-  
-  if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
-  }
-  
-  db = firebase.firestore();
+  if (db) return; // ✅ ป้องกันการสร้าง Connection ซ้อน (ถ้ามี db แล้วให้หยุด)
+  
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  
+  db = firebase.firestore();
 
-  // 1. ฟัง Settings จาก Firestore
-  db.collection('audience_config').doc('settings').onSnapshot(doc => {
-    if (doc.exists) {
-      const newData = doc.data();
+  // 1. ฟัง Settings จาก Firestore
+  db.collection('audience_config').doc('settings').onSnapshot(doc => {
+    if (doc.exists) {
+      const newData = doc.data();
       
       // ✅ เช็คก่อนว่าข้อมูลเปลี่ยนจริงไหม (เช่น isOpen หรือ teams เปลี่ยน) 
       // เพื่อไม่ให้วาดใหม่พร่ำเพรื่อ
       if (JSON.stringify(settings) === JSON.stringify(newData)) return;
 
-      settings = newData;
-      adminMinutes = settings.minutes || 5;
-      
-      // ตัวเดียวจบ: เพราะ handleSettingsChange มี renderTeams อยู่ข้างในแล้ว
-      if (typeof handleSettingsChange === 'function') {
+      settings = newData;
+      adminMinutes = settings.minutes || 5;
+      
+      // ตัวเดียวจบ: เพราะ handleSettingsChange มี renderTeams อยู่ข้างในแล้ว
+      if (typeof handleSettingsChange === 'function') {
         handleSettingsChange();
       }
-    }
-  }, error => {
-    console.error("❌ Settings Sync Error:", error);
-  });
+    }
+  }, error => {
+    console.error("❌ Settings Sync Error:", error);
+  });
 
-  // 2. ฟังคะแนนโหวต
-  db.collection('audience_votes').onSnapshot(snapshot => {
-    let newVotes = {}; 
-    if (!snapshot.empty) {
-      snapshot.forEach(doc => {
-        newVotes[doc.id] = doc.data();
-      });
-    }
+  // 2. ฟังคะแนนโหวต
+  db.collection('audience_votes').onSnapshot(snapshot => {
+    let newVotes = {}; 
+    if (!snapshot.empty) {
+      snapshot.forEach(doc => {
+        newVotes[doc.id] = doc.data();
+      });
+    }
     
     // ✅ เช็คว่าคะแนนเปลี่ยนจริงไหมก่อนจะวาดใหม่
     if (JSON.stringify(votes) === JSON.stringify(newVotes)) return;
     
     votes = newVotes;
 
-    // วาด UI เฉพาะเมื่อข้อมูลพร้อม
-    if (settings && settings.teams) {
+    // วาด UI เฉพาะเมื่อข้อมูลพร้อม
+    if (settings && settings.teams) {
       // ใช้ requestAnimationFrame เพื่อให้ Browser หาจังหวะวาดที่ลื่นที่สุด (ลดอาการกระพริบ)
       window.requestAnimationFrame(() => {
         if (typeof renderTeams === 'function') renderTeams();
         if (typeof updateCharts === 'function') updateCharts();
       });
-    }
-  }, error => {
-    console.error("❌ Votes Sync Error:", error);
-  });
+    }
+  }, error => {
+    console.error("❌ Votes Sync Error:", error);
+  });
 }
+
+/* ฟังก์ชันควบคุมเพลง */
+function manageBGM(shouldPlay) {
+  if (shouldPlay) {
+    // เล่นเพลง (ดักจับ Error กรณี Browser บล็อก Autoplay)
+    bgm.play().catch(err => console.log("Autoplay waiting for user interaction..."));
+  } else {
+    // หยุดและรีเซ็ตเพลง
+    bgm.pause();
+    bgm.currentTime = 0;
+  }
+}
+
 
 /* SETTINGS CHANGE  */
 function handleSettingsChange() {
@@ -245,26 +288,24 @@ function handleSettingsChange() {
   processScreenRouting();
 }
 
-/* ======================================================
-   [FUNCTION: PROCESS SCREEN ROUTING]
-   โลจิกการเลือกหน้าจอ (แยกออกมาเพื่อให้เรียกใช้หลังจากหน้า Loading)
-   ====================================================== */
+/* โลจิกการเลือกหน้าจอ (แยกออกมาเพื่อให้เรียกใช้หลังจากหน้า Loading) */
 function processScreenRouting() {
   if (!settings) return;
 
   applyTranslations();
 
-  // 1. ซิงค์สถานะการโหวตปัจจุบัน (ควรเป็น null หากเพิ่งโดน Reset)
   const savedVote = localStorage.getItem('audienceVote_teamIndex');
   myVote = (savedVote !== null) ? parseInt(savedVote, 10) : null;
 
-  // 2. ตรวจสอบเงื่อนไขเวลา
   const now = Date.now();
   const isExpired = settings.openUntil && now >= settings.openUntil;
 
-  // 3. การเลือกหน้าจอที่จะแสดงผล
+  // 🎵 [เพิ่มจุดนี้] เช็คและเล่นเพลงทันทีตามสถานะจาก Firebase
+  const shouldPlay = settings.isOpen && !isExpired;
+  manageBGM(shouldPlay);
+
+  // --- Logic สลับหน้าจอเดิม ---
   if (settings.isOpen && !isExpired) {
-    // --- กรณี: เปิดโหวต ---
     if (myVote !== null) {
       showScreen('screen-voted');
       updateVotedScreen();
@@ -273,9 +314,7 @@ function processScreenRouting() {
       if (typeof startCountdown === 'function') startCountdown();
     }
   } else {
-    // --- กรณี: ปิดโหวต หรือ เวลาหมด ---
     if (typeof clearTimerInterval === 'function') clearTimerInterval();
-    
     if (myVote !== null) {
       showScreen('screen-voted');
       updateVotedScreen();
@@ -285,10 +324,13 @@ function processScreenRouting() {
     }
   }
 
-  // 4. อัปเดต UI อื่นๆ (ปุ่มทีม และ กราฟ)
   if (typeof renderTeams === 'function') renderTeams();
   if (typeof updateCharts === 'function') updateCharts();
 }
+
+
+
+
 
 /*RENDER TEAMS */
 function renderTeams() {
@@ -437,12 +479,28 @@ function updateVotedScreen() {
                    : '—';
   
   // 3. ดึง Emoji ประจำทีมนั้นมาแสดงด้วย
-  const emoji = getTeamEmoji(myVote);
+  const emoji = typeof getTeamEmoji === 'function' ? getTeamEmoji(myVote) : '⭐';
   
   const confirmEl = document.getElementById('voted-confirm-text');
   if (confirmEl) {
     // แสดงผล: "คุณโหวตให้ทีม 🦊 ทีม A" (ตัวอย่าง)
     confirmEl.innerHTML = `<br> <span style="font-size: 1.5rem; font-weight: 800; color: var(--clr-accent);"> ${emoji} ${teamName} </span>`;
+  }
+
+  // ⭐️ 4. ปลุกระบบเวลานับถอยหลังให้ทำงานในหน้านี้ (ป้องกัน Refresh แล้วเวลาหาย)
+  const now = Date.now();
+  const isExpired = settings?.openUntil && now >= settings.openUntil;
+
+  // หากแอดมินยังเปิดโหวตอยู่และเวลายังไม่หมด ให้สั่งรันนาฬิกา
+  if (settings?.isOpen && !isExpired) {
+    if (typeof startCountdown === 'function') {
+      startCountdown(); 
+    }
+  } else {
+    // หากปิดโหวตหรือเวลาหมดแล้ว ให้แสดง 00:00 ทันที
+    if (typeof updateTimerDisplay === 'function') {
+      updateTimerDisplay('00:00', true);
+    }
   }
 }
 
@@ -531,85 +589,6 @@ function updateCharts() {
       container.innerHTML = chartHTML;
     }
   });
-}
-
-/* COUNTDOWN TIMER */
-function startCountdown() {
-  clearTimerInterval();
-  
-  // ตรวจสอบว่ามีข้อมูลเวลาจาก Firebase หรือไม่
-  if (!settings?.openUntil) {
-    updateTimerDisplay('--:--'); // ถ้าไม่มีเวลาให้โชว์ขีดขีด
-    return;
-  }
-
-  // 1. แสดงผลทันทีหนึ่งครั้ง (ป้องกันเลขกระตุก)
-  updateTimerDisplay();
-
-  // 2. เริ่มลูปนับถอยหลังทุก 1 วินาที
-  timerInterval = setInterval(() => {
-    const remaining = settings.openUntil - Date.now();
-    
-    if (remaining <= 0) {
-      // --- กรณี: หมดเวลาโหวต ---
-      clearTimerInterval();
-      updateTimerDisplay('00:00', true); // บังคับโชว์ 00:00 และใส่สีแดง
-      
-      if (typeof showToast === 'function') showToast(t('timeUp'), 'info');
-      
-      // หน่วงเวลา 1.5 วินาทีเพื่อให้เห็นเลข 00:00 ก่อนเด้งเปลี่ยนหน้า
-      setTimeout(() => {
-        if (typeof handleSettingsChange === 'function') handleSettingsChange();
-      }, 1500);
-      return;
-    }
-    
-    // อัปเดตเวลาตามปกติ
-    updateTimerDisplay();
-  }, 1000);
-}
-
-function updateTimerDisplay(forceValue = null, isUrgent = false) {
-  // ⭐️ จุดสำคัญ: ใช้ querySelectorAll เพื่อดึง 'timer-display' ทุกอันที่มีในทุกหน้าจอ
-  const els = document.querySelectorAll('#timer-display');
-  if (els.length === 0) return;
-
-  let timeStr = "";
-  let urgentMode = isUrgent;
-
-  // 1. คำนวณเวลา (ถ้าไม่ได้ถูกบังคับค่ามา)
-  if (forceValue) {
-    timeStr = forceValue;
-  } else if (settings?.openUntil) {
-    const remaining = Math.max(0, settings.openUntil - Date.now());
-    const mins = Math.floor(remaining / 60000);
-    const secs = Math.floor((remaining % 60000) / 1000);
-    timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
-    
-    // ถ้าเหลือน้อยกว่า 30 วินาที ให้เปิดโหมดตัวเลขสีแดง
-    if (remaining < 30000) urgentMode = true;
-  } else {
-    timeStr = "--:--";
-  }
-
-  // 2. วนลูปอัปเดต Element ทุกตัวที่เจอ
-  els.forEach(el => {
-    el.textContent = timeStr;
-    
-    // จัดการเรื่องสี (Class: urgent)
-    if (urgentMode) {
-      el.classList.add('urgent');
-    } else {
-      el.classList.remove('urgent');
-    }
-  });
-}
-
-function clearTimerInterval() {
-  if (timerInterval) {
-    clearInterval(timerInterval);
-    timerInterval = null;
-  }
 }
 
 /* ADMIN PANEL */
@@ -1078,4 +1057,3 @@ function initTheme() {
     if (icon) icon.textContent = '☀️';
   }
 }
-

@@ -77,6 +77,10 @@ const i18n = {
   }
 };
 
+/* AUDIO STATE */
+const bgm = new Audio('waiting-bgm.mp3'); 
+bgm.loop = true; // เล่นวนลูปอัตโนมัติ
+
 /* STATE */
 let lang          = 'th'; 
 let db            = null; 
@@ -130,6 +134,20 @@ function applyTranslations() {
   // กำหนดภาษาให้ตัวเอกสาร (เพื่อ SEO และ Accessibility)
   document.documentElement.lang = lang;
 }
+
+
+/* [BGM CONTROL FUNCTIONS] */
+function playBGM() {
+    bgm.play().catch(err => {
+        console.warn("Autoplay blocked: เพลงจะเล่นได้หลังจากผู้ใช้คลิกหน้าจอหนึ่งครั้ง", err);
+    });
+}
+
+function stopBGM() {
+    bgm.pause();
+    bgm.currentTime = 0; // รีเซ็ตเพลงกลับไปเริ่มต้นใหม่
+}
+
 
 function toggleLanguage() {
   // 1. สลับค่าระหว่าง 'th' และ 'en'
@@ -245,10 +263,7 @@ function handleSettingsChange() {
   processScreenRouting();
 }
 
-/* ======================================================
-   [FUNCTION: PROCESS SCREEN ROUTING]
-   โลจิกการเลือกหน้าจอ (แยกออกมาเพื่อให้เรียกใช้หลังจากหน้า Loading)
-   ====================================================== */
+/* โลจิกการเลือกหน้าจอ (แยกออกมาเพื่อให้เรียกใช้หลังจากหน้า Loading) */
 function processScreenRouting() {
   if (!settings) return;
 

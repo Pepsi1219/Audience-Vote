@@ -305,6 +305,18 @@ function processScreenRouting() {
   if (typeof updateCharts === 'function') updateCharts();
 }
 
+// เมื่อมีการคลิกครั้งแรก ถ้าเงื่อนไขครบ เพลงจะเริ่มเล่นทันที
+document.addEventListener('click', () => {
+  // เมื่อมีการคลิกครั้งแรก ถ้าเงื่อนไขครบ เพลงจะเริ่มเล่นทันที
+  const now = Date.now();
+  const isExpired = settings?.openUntil && now >= settings.openUntil;
+  if (settings?.isOpen && !isExpired) {
+    bgm.play();
+  }
+}, { once: true }); // ทำงานแค่ครั้งเดียว
+
+
+
 /*RENDER TEAMS */
 function renderTeams() {
   const grid = document.getElementById('teams-grid');

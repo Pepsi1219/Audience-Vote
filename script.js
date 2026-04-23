@@ -479,29 +479,14 @@ function updateVotedScreen() {
                    : '—';
   
   // 3. ดึง Emoji ประจำทีมนั้นมาแสดงด้วย
-  const emoji = typeof getTeamEmoji === 'function' ? getTeamEmoji(myVote) : '⭐';
+  const emoji = getTeamEmoji(myVote);
   
   const confirmEl = document.getElementById('voted-confirm-text');
   if (confirmEl) {
     // แสดงผล: "คุณโหวตให้ทีม 🦊 ทีม A" (ตัวอย่าง)
     confirmEl.innerHTML = `<br> <span style="font-size: 1.5rem; font-weight: 800; color: var(--clr-accent);"> ${emoji} ${teamName} </span>`;
   }
-
-  // ⭐️ 4. ปลุกระบบเวลานับถอยหลังให้ทำงานในหน้านี้ (ป้องกัน Refresh แล้วเวลาหาย)
-  const now = Date.now();
-  const isExpired = settings?.openUntil && now >= settings.openUntil;
-
-  // หากแอดมินยังเปิดโหวตอยู่และเวลายังไม่หมด ให้สั่งรันนาฬิกา
-  if (settings?.isOpen && !isExpired) {
-    if (typeof startCountdown === 'function') {
-      startCountdown(); 
-    }
-  } else {
-    // หากปิดโหวตหรือเวลาหมดแล้ว ให้แสดง 00:00 ทันที
-    if (typeof updateTimerDisplay === 'function') {
-      updateTimerDisplay('00:00', true);
-    }
-  }
+  startCountdown();
 }
 
 /* --- CLOSED CHART --- */
@@ -589,6 +574,96 @@ function updateCharts() {
       container.innerHTML = chartHTML;
     }
   });
+}
+
+/* COUNTDOWN TIMER */
+
+function startCountdown() {
+  clearTimerInterval();
+
+  // ตรวจสอบว่ามีข้อมูลเวลาจาก Firebase หรือไม่
+  if (!settings?.openUntil) {
+    updateTimerDisplay('--:--'); // ถ้าไม่มีเวลาให้โชว์ขีดขีด
+    return;
+  }
+
+  // 1. แสดงผลทันทีหนึ่งครั้ง (ป้องกันเลขกระตุก)
+  updateTimerDisplay();
+
+  // 2. เริ่มลูปนับถอยหลังทุก 1 วินาที
+  timerInterval = setInterval(() => {
+    const remaining = settings.openUntil - Date.now();
+
+    if (remaining <= 0) {
+      // --- กรณี: หมดเวลาโหวต ---
+      clearTimerInterval();
+      updateTimerDisplay('00:00', true); // บังคับโชว์ 00:00 และใส่สีแดง
+
+      if (typeof showToast === 'function') {
+        showToast(t('timeUp'), 'info');
+      }
+
+      // หน่วงเวลา 1.5 วินาทีเพื่อให้เห็นเลข 00:00 ก่อนเด้งเปลี่ยนหน้า
+      setTimeout(() => {
+        if (typeof handleSettingsChange === 'function') {
+          handleSettingsChange();
+        }
+      }, 1500);
+      return;
+    }
+
+    // อัปเดตเวลาตามปกติ
+    updateTimerDisplay();
+  }, 1000);
+}
+
+/* UPDATE TIMER DISPLAY */
+
+function updateTimerDisplay(forceValue = null, isUrgent = false) {
+  // ใช้ querySelectorAll เพื่อดึง 'timer-display' ทุกอันที่มีในทุกหน้าจอ
+  const els = document.querySelectorAll('#timer-display');
+  if (els.length === 0) return;
+
+  let timeStr = "";
+  let urgentMode = isUrgent;
+
+  // 1. คำนวณเวลา (ถ้าไม่ได้ถูกบังคับค่ามา)
+  if (forceValue) {
+    timeStr = forceValue;
+  } else if (settings?.openUntil) {
+    const remaining = Math.max(0, settings.openUntil - Date.now());
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    timeStr = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+
+    // ถ้าเหลือน้อยกว่า 30 วินาที ให้เปิดโหมดตัวเลขสีแดง
+    if (remaining < 30000) {
+      urgentMode = true;
+    }
+  } else {
+    timeStr = "--:--";
+  }
+
+  // 2. วนลูปอัปเดต Element ทุกตัวที่เจอ
+  els.forEach(el => {
+    el.textContent = timeStr;
+
+    // จัดการเรื่องสี (Class: urgent)
+    if (urgentMode) {
+      el.classList.add('urgent');
+    } else {
+      el.classList.remove('urgent');
+    }
+  });
+}
+
+/* CLEAR TIMER INTERVAL */
+
+function clearTimerInterval() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
 }
 
 /* ADMIN PANEL */

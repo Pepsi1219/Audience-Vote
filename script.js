@@ -229,6 +229,19 @@ function initFirebase() {
   });
 }
 
+/* ฟังก์ชันควบคุมเพลง */
+function manageBGM(shouldPlay) {
+  if (shouldPlay) {
+    // เล่นเพลง (ดักจับ Error กรณี Browser บล็อก Autoplay)
+    bgm.play().catch(err => console.log("Autoplay waiting for user interaction..."));
+  } else {
+    // หยุดและรีเซ็ตเพลง
+    bgm.pause();
+    bgm.currentTime = 0;
+  }
+}
+
+
 /* SETTINGS CHANGE  */
 function handleSettingsChange() {
   if (!settings) return;

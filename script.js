@@ -81,6 +81,18 @@ const i18n = {
 const bgm = new Audio('waiting-bgm.mp3'); 
 bgm.loop = true; // เล่นวนลูปอัตโนมัติ
 
+// เมื่อมีการคลิกที่ไหนก็ได้ในหน้าจอครั้งแรก (เช่น ตอนผู้ชมกดดูหน้า Loading หรือกดปุ่มใดๆ)
+document.addEventListener('click', () => {
+  // สร้างเงื่อนไขปลดล็อก Audio Context
+  if (bgm.paused && settings?.isOpen) {
+    const now = Date.now();
+    const isExpired = settings.openUntil && now >= settings.openUntil;
+    if (!isExpired) {
+      bgm.play().catch(e => console.log("Unlock failed:", e));
+    }
+  }
+}, { once: true });
+
 /* STATE */
 let lang          = 'th'; 
 let db            = null; 
@@ -282,17 +294,18 @@ function processScreenRouting() {
 
   applyTranslations();
 
-  // 1. ซิงค์สถานะการโหวตปัจจุบัน (ควรเป็น null หากเพิ่งโดน Reset)
   const savedVote = localStorage.getItem('audienceVote_teamIndex');
   myVote = (savedVote !== null) ? parseInt(savedVote, 10) : null;
 
-  // 2. ตรวจสอบเงื่อนไขเวลา
   const now = Date.now();
   const isExpired = settings.openUntil && now >= settings.openUntil;
 
-  // 3. การเลือกหน้าจอที่จะแสดงผล
+  // 🎵 [เพิ่มจุดนี้] เช็คและเล่นเพลงทันทีตามสถานะจาก Firebase
+  const shouldPlay = settings.isOpen && !isExpired;
+  manageBGM(shouldPlay);
+
+  // --- Logic สลับหน้าจอเดิม ---
   if (settings.isOpen && !isExpired) {
-    // --- กรณี: เปิดโหวต ---
     if (myVote !== null) {
       showScreen('screen-voted');
       updateVotedScreen();
@@ -301,9 +314,7 @@ function processScreenRouting() {
       if (typeof startCountdown === 'function') startCountdown();
     }
   } else {
-    // --- กรณี: ปิดโหวต หรือ เวลาหมด ---
     if (typeof clearTimerInterval === 'function') clearTimerInterval();
-    
     if (myVote !== null) {
       showScreen('screen-voted');
       updateVotedScreen();
@@ -313,20 +324,11 @@ function processScreenRouting() {
     }
   }
 
-  // 4. อัปเดต UI อื่นๆ (ปุ่มทีม และ กราฟ)
   if (typeof renderTeams === 'function') renderTeams();
   if (typeof updateCharts === 'function') updateCharts();
 }
 
-// เมื่อมีการคลิกครั้งแรก ถ้าเงื่อนไขครบ เพลงจะเริ่มเล่นทันที
-document.addEventListener('click', () => {
-  // เมื่อมีการคลิกครั้งแรก ถ้าเงื่อนไขครบ เพลงจะเริ่มเล่นทันที
-  const now = Date.now();
-  const isExpired = settings?.openUntil && now >= settings.openUntil;
-  if (settings?.isOpen && !isExpired) {
-    bgm.play();
-  }
-}, { once: true }); // ทำงานแค่ครั้งเดียว
+
 
 
 

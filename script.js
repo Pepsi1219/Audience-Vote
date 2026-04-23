@@ -77,22 +77,6 @@ const i18n = {
   }
 };
 
-/* AUDIO STATE */
-const bgm = new Audio('waiting-bgm.mp3'); 
-bgm.loop = true; // เล่นวนลูปอัตโนมัติ
-
-// เมื่อมีการคลิกที่ไหนก็ได้ในหน้าจอครั้งแรก (เช่น ตอนผู้ชมกดดูหน้า Loading หรือกดปุ่มใดๆ)
-document.addEventListener('click', () => {
-  // สร้างเงื่อนไขปลดล็อก Audio Context
-  if (bgm.paused && settings?.isOpen) {
-    const now = Date.now();
-    const isExpired = settings.openUntil && now >= settings.openUntil;
-    if (!isExpired) {
-      bgm.play().catch(e => console.log("Unlock failed:", e));
-    }
-  }
-}, { once: true });
-
 /* STATE */
 let lang          = 'th'; 
 let db            = null; 
@@ -146,20 +130,6 @@ function applyTranslations() {
   // กำหนดภาษาให้ตัวเอกสาร (เพื่อ SEO และ Accessibility)
   document.documentElement.lang = lang;
 }
-
-
-/* [BGM CONTROL FUNCTIONS] */
-function playBGM() {
-    bgm.play().catch(err => {
-        console.warn("Autoplay blocked: เพลงจะเล่นได้หลังจากผู้ใช้คลิกหน้าจอหนึ่งครั้ง", err);
-    });
-}
-
-function stopBGM() {
-    bgm.pause();
-    bgm.currentTime = 0; // รีเซ็ตเพลงกลับไปเริ่มต้นใหม่
-}
-
 
 function toggleLanguage() {
   // 1. สลับค่าระหว่าง 'th' และ 'en'
@@ -271,16 +241,15 @@ function handleSettingsChange() {
     localStorage.removeItem('audienceVote_timestamp');
     myVote = null;
 
-    // บังคับเด้งกลับไปหน้าจอ Loading ทันทีตามที่คุณต้องการ
+    // บังคับเด้งกลับไปหน้าจอ Loading ทันที
     showScreen('screen-loading');
 
-    // หน่วงเวลาหน้า Loading ไว้ 1.2 วินาทีเพื่อให้ดูเนียน และรอให้ Firebase เคลียร์ข้อมูลเสร็จ
+    // หน่วงเวลาหน้า Loading ไว้ 1.2 วินาทีเพื่อให้ดูเนียน
     setTimeout(() => {
-      // เมื่อโหลดเสร็จแล้ว ค่อยตัดสินใจว่าจะพาไปหน้าไหนต่อ (เช่น หน้าโหวต หรือ หน้าปิดโหวต)
+      // เมื่อโหลดเสร็จแล้ว ค่อยตัดสินใจว่าจะพาไปหน้าไหนต่อ
       processScreenRouting();
     }, 1200);
 
-    // หยุดการทำงานของฟังก์ชันนี้ไว้แค่นี้ก่อน เพื่อรอผลจาก setTimeout ด้านบน
     return;
   }
 
@@ -288,44 +257,57 @@ function handleSettingsChange() {
   processScreenRouting();
 }
 
-/* โลจิกการเลือกหน้าจอ (แยกออกมาเพื่อให้เรียกใช้หลังจากหน้า Loading) */
+/* PROCESS SCREEN ROUTING */
+
 function processScreenRouting() {
   if (!settings) return;
 
   applyTranslations();
 
+  // 1. ซิงค์สถานะการโหวตปัจจุบัน (ควรเป็น null หากเพิ่งโดน Reset)
   const savedVote = localStorage.getItem('audienceVote_teamIndex');
   myVote = (savedVote !== null) ? parseInt(savedVote, 10) : null;
 
+  // 2. ตรวจสอบเงื่อนไขเวลา
   const now = Date.now();
   const isExpired = settings.openUntil && now >= settings.openUntil;
 
-  // 🎵 [เพิ่มจุดนี้] เช็คและเล่นเพลงทันทีตามสถานะจาก Firebase
-  const shouldPlay = settings.isOpen && !isExpired;
-  manageBGM(shouldPlay);
-
-  // --- Logic สลับหน้าจอเดิม ---
+  // 3. การเลือกหน้าจอที่จะแสดงผล
   if (settings.isOpen && !isExpired) {
+    // --- กรณี: เปิดโหวต ---
     if (myVote !== null) {
       showScreen('screen-voted');
       updateVotedScreen();
     } else {
       showScreen('screen-vote');
-      if (typeof startCountdown === 'function') startCountdown();
+      if (typeof startCountdown === 'function') {
+        startCountdown();
+      }
     }
   } else {
-    if (typeof clearTimerInterval === 'function') clearTimerInterval();
+    // --- กรณี: ปิดโหวต หรือ เวลาหมด ---
+    if (typeof clearTimerInterval === 'function') {
+      clearTimerInterval();
+    }
+
     if (myVote !== null) {
       showScreen('screen-voted');
       updateVotedScreen();
     } else {
       showScreen('screen-closed');
-      if (typeof updateClosedChart === 'function') updateClosedChart();
+      if (typeof updateClosedChart === 'function') {
+        updateClosedChart();
+      }
     }
   }
 
-  if (typeof renderTeams === 'function') renderTeams();
-  if (typeof updateCharts === 'function') updateCharts();
+  // 4. อัปเดต UI อื่นๆ (ปุ่มทีม และ กราฟ)
+  if (typeof renderTeams === 'function') {
+    renderTeams();
+  }
+  if (typeof updateCharts === 'function') {
+    updateCharts();
+  }
 }
 
 

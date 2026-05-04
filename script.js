@@ -43,6 +43,7 @@ const i18n = {
     totalVotes:    (n) => `รวม ${n} โหวต`,
     back:          "กลับ",
     noTeams:       "ยังไม่มีทีม กรุณาตั้งค่าก่อน",
+    alreadyVotedMsg: "คุณเคยโหวตไปแล้ว ไม่สามารถโหวตซ้ำได้",
   },
   en: {
     loading:       "Loading...",
@@ -74,6 +75,7 @@ const i18n = {
     totalVotes:    (n) => `${n} total votes`,
     back:          "Back",
     noTeams:       "No teams configured",
+    alreadyVotedMsg: "You have already voted and cannot vote again",
   }
 };
 
@@ -162,7 +164,12 @@ function initFirebase() {
   }
   
   db = firebase.firestore();
-  firebase.auth(); // ✅ Initialize Auth
+  firebase.auth();
+
+  // ✅ Login แบบ Anonymous อัตโนมัติ
+  firebase.auth().signInAnonymously().catch(err => {
+    console.error("Anonymous auth error:", err);
+  });
 
   // 1. ฟัง Settings จาก Firestore
   db.collection('audience_config').doc('settings').onSnapshot(doc => {
@@ -386,51 +393,74 @@ async function castVote(teamIdx, teamName) {
   // 1. ป้องกันการโหวตซ้ำหรือโหวตตอนปิดระบบ
   if (myVote !== null || !settings?.isOpen) return;
 
-  // 2. ล็อกปุ่มทั้งหมดทันทีเพื่อป้องกันการกดซ้ำ (UI UX)
+  // 2. ล็อกปุ่มทั้งหมดทันทีเพื่อป้องกันการกดซ้ำ
   const allButtons = document.querySelectorAll('.team-btn');
   allButtons.forEach(btn => btn.disabled = true);
 
   const now = Date.now();
 
-  // 3. ตรวจสอบเรื่องเวลาโหวตอีกครั้งก่อนส่งข้อมูล
+  // 3. ตรวจสอบเวลาโหวต
   if (settings.openUntil && now >= settings.openUntil) {
     showToast(t('timeUp'), 'error');
     if (typeof handleSettingsChange === 'function') handleSettingsChange();
     return;
   }
 
-  // 4. บันทึกสถานะลงเครื่องผู้ใช้ (Local)
-  myVote = teamIdx;
-  localStorage.setItem('audienceVote_teamIndex', teamIdx);
-  
-  // ⭐️ จุดสำคัญ: บันทึกเวลาที่โหวต เพื่อใช้เทียบกับ lastUpdated ของแอดมิน
-  localStorage.setItem('audienceVote_timestamp', now); 
+  // ✅ 4. ตรวจสอบ Anonymous UID ว่าโหวตไปแล้วหรือยัง
+  const user = firebase.auth().currentUser;
+  if (!user) {
+    showToast(t('alreadyVotedMsg'), "info");
+    allButtons.forEach(btn => btn.disabled = false);
+    return;
+  }
 
-  const teamRef = db.collection('audience_votes').doc(teamIdx.toString());
+  const userVoteRef = db.collection('user_votes').doc(user.uid);
   
   try {
-    // 5. ส่งข้อมูลไปยัง Firebase
-    // ใช้ Increment เพื่อความแม่นยำกรณีโหวตพร้อมกันจำนวนมาก
-    teamRef.set({
+    const userVoteDoc = await userVoteRef.get();
+    if (userVoteDoc.exists) {
+      // UID นี้โหวตไปแล้ว (โกงโดยล้าง localStorage ไม่ได้อีกต่อไป)
+      showToast(t('alreadyVoted'), 'error');
+      myVote = userVoteDoc.data().teamIdx;
+      localStorage.setItem('audienceVote_teamIndex', myVote);
+      showScreen('screen-voted');
+      updateVotedScreen();
+      return;
+    }
+  } catch (err) {
+    console.error("UID check error:", err);
+  }
+
+  // 5. บันทึกสถานะลงเครื่องผู้ใช้ (Local)
+  myVote = teamIdx;
+  localStorage.setItem('audienceVote_teamIndex', teamIdx);
+  localStorage.setItem('audienceVote_timestamp', now);
+
+  try {
+    // ✅ 6. ส่งข้อมูลแบบ Batch (ทำพร้อมกัน 2 อย่าง)
+    const batch = db.batch();
+
+    // บันทึกว่า UID นี้โหวตไปแล้ว
+    batch.set(userVoteRef, {
+      teamIdx: teamIdx,
+      teamName: teamName,
+      votedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+
+    // เพิ่มคะแนนทีม
+    const teamRef = db.collection('audience_votes').doc(teamIdx.toString());
+    batch.set(teamRef, {
       count: firebase.firestore.FieldValue.increment(1),
       teamName: teamName,
       lastVoteAt: firebase.firestore.FieldValue.serverTimestamp()
-    }, { merge: true }).catch(err => {
-        // กรณี Firebase ทำงานผิดพลาด: คืนสถานะให้ผู้ใช้กดใหม่ได้
-        console.error("Firebase Vote Error:", err);
-        myVote = null;
-        localStorage.removeItem('audienceVote_teamIndex');
-        localStorage.removeItem('audienceVote_timestamp'); // ล้างเวลาด้วย
-        showToast("Error: " + err.message, "error");
-        if (typeof renderTeams === 'function') renderTeams(); 
-    });
+    }, { merge: true });
 
-    // 6. แจ้งเตือนผู้ใช้ (Feedback)
-    // ใช้ String Template แทนหากฟังก์ชัน t() ไม่รองรับการแทนที่ค่า
-    const voteMsg = typeof t === 'function' ? `${t('votedFor')} ${teamName}` : `Voted for ${teamName}`;
-    showToast(voteMsg, 'success');
-    
-    // 7. หน่วงเวลาเล็กน้อยเพื่อให้เห็น Effect ก่อนเปลี่ยนหน้า
+    await batch.commit();
+
+    // 7. แจ้งเตือนผู้ใช้
+    showToast(t('votedFor', teamName), 'success');
+
+    // 8. เปลี่ยนหน้า
     setTimeout(() => {
       showScreen('screen-voted');
       if (typeof updateVotedScreen === 'function') updateVotedScreen();
@@ -441,6 +471,8 @@ async function castVote(teamIdx, teamName) {
     myVote = null;
     localStorage.removeItem('audienceVote_teamIndex');
     localStorage.removeItem('audienceVote_timestamp');
+    showToast("Error: " + error.message, "error");
+    if (typeof renderTeams === 'function') renderTeams();
   }
 }
 
@@ -767,39 +799,29 @@ function updateVoteStatusLabel(isOpen) {
 }
 
 async function toggleVoting(isOpen) {
-    // 1. UI Feedback ทันทีเพื่อให้ Admin รู้ว่าระบบรับคำสั่งแล้ว
-    updateVoteStatusLabel(isOpen);
-    
-    // 2. คำนวณเวลาสิ้นสุด
-    // แนะนำ: ใช้ค่าจาก adminMinutes ที่แอดมินปรับในหน้าจอ
-    const openUntil = isOpen ? Date.now() + (adminMinutes * 60 * 1000) : null;
+  updateVoteStatusLabel(isOpen);
+  
+  const openUntil = isOpen ? Date.now() + (adminMinutes * 60 * 1000) : null;
+  const docRef = db.collection('audience_config').doc('settings');
 
-    const docRef = db.collection('audience_config').doc('settings');
+  try {
+    await docRef.set({
+      isOpen: isOpen,
+      openUntil: openUntil,
+      minutes: adminMinutes,
+      lastToggleAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
 
-    try {
-        // 3. ใช้ set แบบ merge: true เป็นหลัก เพื่อความกระชับของโค้ด 
-        // (จัดการได้ทั้งกรณีมี doc แล้วหรือยังไม่มี)
-        await docRef.set({
-            isOpen: isOpen,
-            openUntil: openUntil,
-            minutes: adminMinutes,
-            // เพิ่ม Timestamp เพื่อใช้อ้างอิงเวลาที่เซิร์ฟเวอร์
-            lastToggleAt: firebase.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+    const statusMsg = isOpen ? t('active') : t('inactive');
+    showToast(`Voting is now ${statusMsg}`, 'info');
 
-        // 4. แจ้งเตือนสถานะ
-        const statusMsg = isOpen ? t('active') : t('inactive');
-        showToast(`Voting is now ${statusMsg}`, 'info');
-
-    } catch (e) {
-        console.error("Toggle Voting Error:", e);
-        showToast("Failed to update voting status", "error");
-        
-        // ถ้า Error ให้ดีดสวิตช์กลับ
-        const toggle = document.getElementById('vote-toggle');
-        if (toggle) toggle.checked = !isOpen;
-        updateVoteStatusLabel(!isOpen);
-    }
+  } catch (e) {
+    console.error("Toggle Voting Error:", e);
+    showToast("Failed to update voting status", "error");
+    const toggle = document.getElementById('vote-toggle');
+    if (toggle) toggle.checked = !isOpen;
+    updateVoteStatusLabel(!isOpen);
+  }
 }
 
 async function saveAdminSettings() {
@@ -868,55 +890,46 @@ async function saveAdminSettings() {
     }
 }
 async function resetVotes() {
-    if (!confirm(t('resetConfirm'))) return;
+  if (!confirm(t('resetConfirm'))) return;
 
-    try {
-        const batch = db.batch();
+  try {
+    const batch = db.batch();
 
-        // 1. ล้างคะแนนใน audience_votes (ลบข้อมูลโหวตเดิมทิ้ง)
-        const voteSnap = await db.collection('audience_votes').get();
-        voteSnap.forEach(doc => {
-            batch.delete(doc.ref);
-        });
+    // ล้างคะแนนทั้งหมด
+    const voteSnap = await db.collection('audience_votes').get();
+    voteSnap.forEach(doc => batch.delete(doc.ref));
 
-        // 2. อัปเดต settings เพื่อปิดระบบและส่งสัญญาณ Reset
-        const settingsRef = db.collection('audience_config').doc('settings');
-        batch.update(settingsRef, {
-            isOpen: false,
-            openUntil: null,
-            teams: [],    // ล้างรายชื่อทีม
-            minutes: 5,   // รีเซ็ตนาทีพื้นฐาน
-            // ⭐️ หัวใจสำคัญ: ส่งสัญญาณเวลาใหม่เพื่อให้เครื่องลูกตรวจพบการเปลี่ยนแปลง
-            lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
-            lastReset: firebase.firestore.FieldValue.serverTimestamp()
-        });
+    // ✅ ล้าง user_votes ให้ทุกคนโหวตได้ใหม่
+    const userVoteSnap = await db.collection('user_votes').get();
+    userVoteSnap.forEach(doc => batch.delete(doc.ref));
 
-        // ยืนยันการล้างข้อมูลทั้งหมดไปยัง Firebase
-        await batch.commit();
+    // อัปเดต settings
+    const settingsRef = db.collection('audience_config').doc('settings');
+    batch.update(settingsRef, {
+      isOpen: false,
+      openUntil: null,
+      lastUpdated: firebase.firestore.FieldValue.serverTimestamp(),
+      lastReset: firebase.firestore.FieldValue.serverTimestamp()
+    });
 
-        // 3. ล้าง Local State ในเครื่องแอดมินเอง
-        localStorage.removeItem('audienceVote_teamIndex');
-        localStorage.removeItem('audienceVote_timestamp'); // ล้างเวลาโหวตด้วย
-        myVote = null;
-        
-        // ล้างหน้าจอ Input ใน Admin Panel ให้ว่างเปล่าทันที
-        const container = document.getElementById('admin-teams-inputs');
-        if (container) container.innerHTML = ''; 
-        if (typeof updateTeamCount === 'function') updateTeamCount();
+    await batch.commit();
 
-        showToast(t('resetDone'), 'info');
-        closeAdmin();
+    localStorage.removeItem('audienceVote_teamIndex');
+    localStorage.removeItem('audienceVote_timestamp');
+    myVote = null;
 
-        // 4. บังคับให้หน้าจอแอดมินเองกลับไปหน้าโหลดเพื่อ Sync ข้อมูลใหม่
-        showScreen('screen-loading');
-        setTimeout(() => {
-            if (typeof handleSettingsChange === 'function') handleSettingsChange();
-        }, 1000);
+    showToast(t('resetDone'), 'info');
+    closeAdmin();
 
-    } catch (error) {
-        console.error("Reset Error:", error);
-        showToast("Error resetting: " + error.message, "error");
-    }
+    showScreen('screen-loading');
+    setTimeout(() => {
+      if (typeof handleSettingsChange === 'function') handleSettingsChange();
+    }, 1000);
+
+  } catch (error) {
+    console.error("Reset Error:", error);
+    showToast("Error resetting: " + error.message, "error");
+  }
 }
 
 /* SCREEN MANAGEMENT */

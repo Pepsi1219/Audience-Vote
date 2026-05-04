@@ -644,10 +644,11 @@ function clearTimerInterval() {
 
 /* ADMIN PANEL */
 async function openAdmin() {
-  const email    = prompt("📧 Admin Email:");
-  if (!email) return;
-  const password = prompt("🔑 Password:");
-  if (!password) return;
+  const input = prompt("🔑 Admin Login\n\nEmail: admin@vote.com\nPassword:");
+  if (!input) return;
+  
+  const password = input.trim();
+  const email = "admin@vote.com"; // hardcode email ไว้เลย ไม่ต้องพิมพ์
 
   try {
     await firebase.auth().signInWithEmailAndPassword(email, password);
@@ -661,7 +662,7 @@ async function openAdmin() {
     showToast("🔐 เข้าสู่ระบบแอดมินแล้ว", "success");
 
   } catch (err) {
-    showToast("❌ Email หรือ Password ไม่ถูกต้อง", "error");
+    showToast("❌ รหัสผ่านไม่ถูกต้อง", "error");
     console.error("Admin login error:", err.message);
   }
 }

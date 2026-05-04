@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <meta name="theme-color" content="#0a0f1e" />
-  <title>Audience Vote — โหวตทีมที่คุณชอบ</title>
+  <title>Audience Vote</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -12,15 +12,11 @@
 
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-
-     <!--  ปิดเว็บชั่วคราว
-  <script>
-    window.location.href = "closed.html";
-  </script> -->
 
   <div id="screen-loading" class="screen active">
     <div class="loading-center">
@@ -65,7 +61,6 @@
       <div class="voted-check">✓</div>
       <h2 class="voted-title" data-i18n="thankYou">ขอบคุณที่โหวต!</h2>
       <p id="voted-confirm-text" class="voted-sub"></p>
-
 
       <div style="position: absolute; top: 12px; left: 10px;">
        <span class="timer-icon">⏱</span>

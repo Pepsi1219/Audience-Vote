@@ -155,60 +155,54 @@ function toggleLanguage() {
 
 /*  FIREBASE INIT */
 function initFirebase() {
-  if (db) return; // ✅ ป้องกันการสร้าง Connection ซ้อน (ถ้ามี db แล้วให้หยุด)
-  
-  if (!firebase.apps.length) {
-    firebase.initializeApp(firebaseConfig);
-  }
-  
-  db = firebase.firestore();
+  if (db) return;
+  
+  if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+  }
+  
+  db = firebase.firestore();
+  firebase.auth(); // ✅ Initialize Auth
 
-  // 1. ฟัง Settings จาก Firestore
-  db.collection('audience_config').doc('settings').onSnapshot(doc => {
-    if (doc.exists) {
-      const newData = doc.data();
+  // 1. ฟัง Settings จาก Firestore
+  db.collection('audience_config').doc('settings').onSnapshot(doc => {
+    if (doc.exists) {
+      const newData = doc.data();
       
-      // ✅ เช็คก่อนว่าข้อมูลเปลี่ยนจริงไหม (เช่น isOpen หรือ teams เปลี่ยน) 
-      // เพื่อไม่ให้วาดใหม่พร่ำเพรื่อ
       if (JSON.stringify(settings) === JSON.stringify(newData)) return;
-
-      settings = newData;
-      adminMinutes = settings.minutes || 5;
-      
-      // ตัวเดียวจบ: เพราะ handleSettingsChange มี renderTeams อยู่ข้างในแล้ว
-      if (typeof handleSettingsChange === 'function') {
+      settings = newData;
+      adminMinutes = settings.minutes || 5;
+      
+      if (typeof handleSettingsChange === 'function') {
         handleSettingsChange();
       }
-    }
-  }, error => {
-    console.error("❌ Settings Sync Error:", error);
-  });
+    }
+  }, error => {
+    console.error("❌ Settings Sync Error:", error);
+  });
 
-  // 2. ฟังคะแนนโหวต
-  db.collection('audience_votes').onSnapshot(snapshot => {
-    let newVotes = {}; 
-    if (!snapshot.empty) {
-      snapshot.forEach(doc => {
-        newVotes[doc.id] = doc.data();
-      });
-    }
+  // 2. ฟังคะแนนโหวต
+  db.collection('audience_votes').onSnapshot(snapshot => {
+    let newVotes = {}; 
+    if (!snapshot.empty) {
+      snapshot.forEach(doc => {
+        newVotes[doc.id] = doc.data();
+      });
+    }
     
-    // ✅ เช็คว่าคะแนนเปลี่ยนจริงไหมก่อนจะวาดใหม่
     if (JSON.stringify(votes) === JSON.stringify(newVotes)) return;
     
     votes = newVotes;
 
-    // วาด UI เฉพาะเมื่อข้อมูลพร้อม
-    if (settings && settings.teams) {
-      // ใช้ requestAnimationFrame เพื่อให้ Browser หาจังหวะวาดที่ลื่นที่สุด (ลดอาการกระพริบ)
+    if (settings && settings.teams) {
       window.requestAnimationFrame(() => {
         if (typeof renderTeams === 'function') renderTeams();
         if (typeof updateCharts === 'function') updateCharts();
       });
-    }
-  }, error => {
-    console.error("❌ Votes Sync Error:", error);
-  });
+    }
+  }, error => {
+    console.error("❌ Votes Sync Error:", error);
+  });
 }
 
 /* ฟังก์ชันควบคุมเพลง */
@@ -649,30 +643,36 @@ function clearTimerInterval() {
 }
 
 /* ADMIN PANEL */
-function openAdmin() {
-  const password = prompt("🔑 กรุณาใส่รหัสผ่านแอดมิน:");
+async function openAdmin() {
+  const email    = prompt("📧 Admin Email:");
+  if (!email) return;
+  const password = prompt("🔑 Password:");
+  if (!password) return;
 
-  if (password === "Admin1234") {
+  try {
+    await firebase.auth().signInWithEmailAndPassword(email, password);
+    
     const overlay = document.getElementById('admin-overlay');
     if (overlay) {
       overlay.classList.remove('hidden');
-      
-      // 1. [ปรับตรงนี้] แก้ชื่อฟังก์ชันให้ตรงกับที่มีอยู่ด้านล่าง
-      renderAdminTeamInputs(); 
-      
-      // 2. [เพิ่มตรงนี้] เรียกใช้เพื่อตั้งค่าสถานะสวิตช์และเวลาปัจจุบัน
-      renderAdminPanel(); 
-
-      showToast("🔐 เข้าสู่ระบบแอดมินแล้ว", "success");
+      renderAdminTeamInputs();
+      renderAdminPanel();
     }
-  } else if (password !== null) {
-    showToast("❌ รหัสผ่านไม่ถูกต้อง!", "error");
+    showToast("🔐 เข้าสู่ระบบแอดมินแล้ว", "success");
+
+  } catch (err) {
+    showToast("❌ Email หรือ Password ไม่ถูกต้อง", "error");
+    console.error("Admin login error:", err.message);
   }
 }
 
 function closeAdmin() {
   const overlay = document.getElementById('admin-overlay');
   if (overlay) overlay.classList.add('hidden');
+  
+  // Logout ออกจาก Firebase Auth ทันทีที่ปิด Panel
+  firebase.auth().signOut().catch(err => console.warn("Sign out error:", err));
+  
   if (typeof updateCharts === 'function') updateCharts();
 }
 
